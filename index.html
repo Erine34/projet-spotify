@@ -12,11 +12,11 @@
 <body>
 
   <header class="bg-primary text-white text-center py-4">
-    <h1>Les musiques du Marill</h1>
-    <p class="mb-0">je n'ai pas d'inspi pour le sous titre, de toute façon vous savez ce qui vas y avoir</p>
+    <h1>Les musiques d'Erine Lopez !</h1>
+    <p>Voici ma playlist ! Bonne écoute !</p>
   </header>
 
-  <section class="container my-4">
+  <section class="container my-4" x-data="chartes()">
     <div class="row">
       <div class="col-md-6">
         <div class="card">
@@ -29,7 +29,7 @@
       <div class="col-md-6">
         <div class="card">
           <div class="card-header bg-success text-white">Distribution des Genres</div>
-          <div class="card-body">
+          <div class="card-body" style="height: 400px;">
             <canvas id="distGenres"></canvas>
           </div>
         </div>
@@ -39,11 +39,12 @@
 
   <section class="container my-4" x-data="tableauMusiques()">
     <div class="card">
-      <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+      <div
+        class="card-header bg-info text-white d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
         <span>Liste des Morceaux</span>
-        <input type="text" class="form-control w-25" placeholder="🔍 Rechercher..." x-model="recherche">
+        <input type="text" class="form-control w-100 w-md-25" placeholder="Rechercher..." x-model="recherche">
       </div>
-      <div class="card-body p-0">
+      <div class="table-responsive">
         <table class="table table-striped mb-0">
           <thead>
             <tr>
@@ -57,10 +58,10 @@
             <template x-for="track in morceauxFiltres()" :key="track.id">
               <tr>
                 <td x-text="track.name"></td>
-                <td x-text="track.artist"></td>
-                <td x-text="track.album"></td>
+                <td x-text="track.artists[0].name"></td>
+                <td x-text="track.album.name"></td>
                 <td>
-                  <button class="btn btn-primary btn-sm">ℹ️ Détails</button>
+                  <button class="btn btn-primary btn-sm" @click="ouvrirDetails(track)">ℹ️ Détails</button>
                 </td>
               </tr>
             </template>
@@ -90,11 +91,217 @@
     </div>
   </section>
 
-  <!-- Scripts à la fin -->
+  <!-- Modale Détails -->
+  <div class="modal fade" id="modalDetails" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title" id="modalTitre">Détails</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="modalContenu"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <script>
+    document.addEventListener('alpine:init', () => {
+      Alpine.store('spotify', {
+        tracks: [],
+        loaded: false,
+        init() {
+          fetch('data/data.json')
+            .then(res => res.json())
+            .then(data => {
+              this.tracks = data
+              this.loaded = true
+            })
+        }
+      })
+    })
+
+    function chartes() {
+      return {
+        init() {
+          if (this.$store.spotify.loaded) {
+            this._creerChartes()
+          } else {
+            this.$watch(() => this.$store.spotify.loaded, loaded => {
+              if (loaded) this._creerChartes()
+            })
+          }
+        },
+
+        _creerChartes() {
+          const data = this.$store.spotify.tracks
+
+          const artistes = {}
+          data.forEach(track => {
+            const nom = track.artists[0].name
+            artistes[nom] = (artistes[nom] || 0) + 1
+          })
+          const top10 = Object.entries(artistes)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+
+          new Chart(document.getElementById('topArtistes'), {
+            type: 'bar',
+            data: {
+              labels: top10.map(a => a[0]),
+              datasets: [{ label: 'Nombre de morceaux', data: top10.map(a => a[1]), backgroundColor: '#0d6efd' }]
+            },
+            options: { indexAxis: 'y' }
+          })
+
+          const genres = {}
+          data.forEach(track => {
+            const g = track.artists[0].genres[0] || 'Autres'
+            genres[g] = (genres[g] || 0) + 1
+          })
+
+          new Chart(document.getElementById('distGenres'), {
+            type: 'pie',
+            data: {
+              labels: Object.keys(genres),
+              datasets: [{ data: Object.values(genres) }]
+            },
+            options: {
+              maintainAspectRatio: false,
+              plugins: {
+                title: { display: true, text: 'Distribution des genres musicaux' },
+                legend: { position: 'right' }
+              }
+            }
+          })
+        }
+      }
+    }
+
+    function tableauMusiques() {
+      return {
+        recherche: '',
+
+        get morceaux() {
+          return this.$store.spotify.tracks
+        },
+
+        morceauxFiltres() {
+          const q = this.recherche.toLowerCase()
+          return this.morceaux.filter(track =>
+            track.name.toLowerCase().includes(q) ||
+            track.artists[0].name.toLowerCase().includes(q) ||
+            track.album.name.toLowerCase().includes(q)
+          )
+        }
+      }
+    }
+
+    function ouvrirDetails(track) {
+      document.getElementById('modalTitre').textContent = 'Détails du morceau'
+
+      const dureeMin = Math.floor(track.duration_ms / 60000)
+      const dureeSec = Math.floor((track.duration_ms % 60000) / 1000).toString().padStart(2, '0')
+
+      const artistes = track.artists.map(a => `
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <img src="${a.images?.[0]?.url || track.album.images[2]?.url}"
+               style="width:40px;height:40px;border-radius:50%;object-fit:cover;">
+          <div>
+            <strong>${a.name}</strong><br>
+            <small class="text-muted">Popularité: ${a.popularity}/100 · Followers: ${a.followers?.total?.toLocaleString('fr-FR')}</small>
+          </div>
+        </div>
+      `).join('')
+
+      const genresUniques = [...new Set(track.artists.flatMap(a => a.genres || []))]
+      const genresBadges = genresUniques.map(g => `<span class="badge bg-secondary me-1">${g}</span>`).join('')
+      const popularitePercent = track.popularity
+
+      document.getElementById('modalContenu').innerHTML = `
+        <div class="row">
+          <div class="col-md-4">
+            <img src="${track.album.images[0]?.url}" class="img-fluid rounded mb-2">
+            <p class="fw-bold mb-0">${track.album.name}</p>
+            <small class="text-muted">
+              ${new Date(track.album.release_date).toLocaleDateString('fr-FR')} · ${track.album.total_tracks} titres
+            </small>
+            <div class="mt-2">
+              <span class="badge bg-success">Popularité: ${track.album.popularity}/100</span>
+            </div>
+          </div>
+          <div class="col-md-8">
+            <h5 class="mb-1">${track.name}</h5>
+            ${track.preview_url
+              ? `<p class="text-muted mb-1">Preview audio</p><audio controls src="${track.preview_url}" class="w-100 mb-3"></audio>`
+              : '<p class="text-muted fst-italic mb-3">Pas de preview disponible</p>'
+            }
+            <p class="fw-semibold mb-2">Informations sur le morceau</p>
+            <table class="table table-sm">
+              <tr><td>Durée</td><td class="text-end"><span class="badge bg-primary">${dureeMin}:${dureeSec}</span></td></tr>
+              <tr>
+                <td>Popularité</td>
+                <td class="text-end">
+                  <div class="d-flex align-items-center gap-2 justify-content-end">
+                    <div class="progress flex-grow-1" style="height:8px;">
+                      <div class="progress-bar bg-info" style="width:${popularitePercent}%"></div>
+                    </div>
+                    ${popularitePercent}/100
+                  </div>
+                </td>
+              </tr>
+              <tr><td>Numéro de piste</td><td class="text-end">${track.track_number}</td></tr>
+              <tr><td>Explicit</td><td class="text-end">${track.explicit ? 'Oui' : 'Non'}</td></tr>
+            </table>
+            <p class="fw-semibold mb-2">Artistes</p>
+            ${artistes}
+            ${genresUniques.length > 0 ? `<p class="fw-semibold mb-2">Genres</p><div>${genresBadges}</div>` : ''}
+            <div class="text-end mt-3">
+              <a href="${track.external_urls?.spotify}" target="_blank" class="btn btn-success">
+                🎵 Ouvrir dans Spotify
+              </a>
+            </div>
+          </div>
+        </div>
+      `
+
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('modalDetails')).show()
+    }
+
+    function albums() {
+      return {
+        get albumsListe() {
+          const albumsMap = {}
+          this.$store.spotify.tracks.forEach(track => {
+            const id = track.album.id
+            if (!albumsMap[id]) {
+              albumsMap[id] = {
+                id,
+                name: track.album.name,
+                artist: track.artists[0].name,
+                date: new Date(track.album.release_date).toLocaleDateString('fr-FR', {
+                  day: 'numeric', month: 'long', year: 'numeric'
+                }),
+                image: track.album.images[0]?.url || '',
+                titres: track.album.total_tracks,
+                score: track.album.popularity
+              }
+            }
+          })
+          return Object.values(albumsMap)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 12)
+        }
+      }
+    }
+  </script>
+
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
-  <script src="script/script.js"></script>
 
 </body>
 
